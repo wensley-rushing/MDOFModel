@@ -4,6 +4,7 @@
 # Dependancy: 
 # -
 ########################################################
+import xara
 
 def Alpha_CNcode(T,Tg,alphaMax,kesi=0.05):
 

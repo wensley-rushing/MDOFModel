@@ -8,7 +8,7 @@
 from ctypes import Union
 import matplotlib.pyplot as plt
 from cmath import pi
-import opensees.openseespy as ops
+import xara as ops
 from opensees.openseespy import *
 import pandas as pd
 import numpy as np
@@ -16,6 +16,12 @@ import ReadRecord
 from pathlib import Path
 import os
 import mpl_toolkits.axisartist as axisartist
+
+Test = {1:'NormDispIncr', 2: 'RelativeEnergyIncr', 3:'EnergyIncr', 
+    4: 'RelativeNormUnbalance',5: 'RelativeNormDispIncr', 6: 'NormUnbalance'}
+
+Algorithm = {1:'KrylovNewton', 2: 'SecantNewton' , 3:'ModifiedNewton' , 
+    4: 'RaphsonNewton',5: 'PeriodicNewton', 6: 'BFGS', 7: 'Broyden', 8: 'NewtonLineSearch'}
 
 class MDOFOpenSees():
 
@@ -91,9 +97,9 @@ class MDOFOpenSees():
         self.__BuildModel(ifprint)
 
         tsTag = 301
-        timeSeries('Linear', tsTag)
+        model.timeSeries('Linear', tsTag)
         patternTag = 101
-        pattern('Plain', patternTag, tsTag)
+        model.pattern('Plain', patternTag, tsTag)
 
         # Create nodal loads
         #    nd    FX  FY  MZ
@@ -102,13 +108,13 @@ class MDOFOpenSees():
 
         # recorders
         outputdir = Path(self.outputdir).relative_to(Path.cwd())
-        recorder('Element', '-file', 
+        model.recorder('Element', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'DriftHistory.txt')), '-time',
             '-ele', *list(range(1,self.NStories+1)), 'deformations')
-        recorder('Element', '-file', 
+        model.recorder('Element', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'ForceHistory.txt')), '-time',
             '-ele', *list(range(1,self.NStories+1)), 'axialForce')
-        recorder('Node', '-file', 
+        model.recorder('Node', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'NodeDispHistory.txt')),'-time',
             '-node', *list(range(1,self.NStories+1)), '-dof', 1, 'disp')
         
@@ -117,16 +123,11 @@ class MDOFOpenSees():
         maxNumIter = 100
         if isinstance(CFloor,str) & (CFloor == 'roof'):
             CFloor = self.NStories
-        system('FullGeneral')
-        constraints('Transformation')
-        numberer('RCM')
-        test('NormDispIncr', Tol, maxNumIter)
-        algorithm('NewtonLineSearch') 
-
-        Test = {1:'NormDispIncr', 2: 'RelativeEnergyIncr', 3:'EnergyIncr', 
-            4: 'RelativeNormUnbalance',5: 'RelativeNormDispIncr', 6: 'NormUnbalance'}
-        Algorithm = {1:'KrylovNewton', 2: 'SecantNewton' , 3:'ModifiedNewton' , 
-            4: 'RaphsonNewton',5: 'PeriodicNewton', 6: 'BFGS', 7: 'Broyden', 8: 'NewtonLineSearch'}
+        model.system('FullGeneral')
+        model.constraints('Transformation')
+        model.numberer('RCM')
+        model.test('NormDispIncr', Tol, maxNumIter)
+        model.algorithm('NewtonLineSearch') 
 
         currentDisp = 0.0
         ok = 0
@@ -134,10 +135,10 @@ class MDOFOpenSees():
         for i in range(len(maxU)):
             while ok == 0 and abs(currentDisp-maxU[i])>dU:
                 numIter=100
-                integrator('DisplacementControl', CFloor, 1, 
+                model.integrator('DisplacementControl', CFloor, 1, 
                     np.sign(maxU[i]-currentDisp)*dU, numIter)
-                analysis('Static')
-                ok = analyze(1)
+                model.analysis('Static')
+                ok = model.analyze(1)
                 # if the analysis fails try initial tangent iteration
                 if ok != 0:
                     break
@@ -148,7 +149,6 @@ class MDOFOpenSees():
         if ifprint:
             print(f'State (Successful or Fault): {Iffinish:d}')
         
-        wipe()
         self.__ReadPushoverRecorderFiles()
 
         return Iffinish, currentDisp
@@ -182,31 +182,31 @@ class MDOFOpenSees():
             '-factor', self.__g * GMScaling) # 用相对路径，避免路径中有中文字符
         IDloadTag = 400			# load tag
         GMdirection = 1
-        pattern('UniformExcitation', IDloadTag, GMdirection, '-accel', tsTag)
+        model.pattern('UniformExcitation', IDloadTag, GMdirection, '-accel', tsTag)
 
         # recorders
         outputdir = Path(self.outputdir).relative_to(Path.cwd())
-        recorder('EnvelopeElement', '-file', 
+        model.recorder('EnvelopeElement', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'MaxDrift.txt')),
             '-ele', *list(range(1,self.NStories+1)), 'deformations')
-        recorder('Element', '-file', 
+        model.recorder('Element', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'DriftHistory.txt')),'-time',
             '-ele', *list(range(1,self.NStories+1)), 'deformations')
-        recorder('Element', '-file', 
+        model.recorder('Element', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'ForceHistory.txt')), '-time',
             '-ele', *list(range(1,self.NStories+1)), 'axialForce')
-        recorder('EnvelopeNode', '-file', 
+        model.recorder('EnvelopeNode', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'MaxAbsAccel.txt')), 
             '-timeSeries', tsTag, 
             '-node', *list(range(self.NStories+1)), '-dof', 1, 'accel')
-        recorder('EnvelopeNode', '-file', 
+        model.recorder('EnvelopeNode', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'MaxRelativeAccel.txt')),
             '-node', *list(range(self.NStories+1)), '-dof', 1, 'accel')
-        recorder('Node', '-file', 
+        model.recorder('Node', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'NodeAbsAccelHistory.txt')),
             '-timeSeries', tsTag, '-time', 
             '-node', *list(range(self.NStories+1)), '-dof', 1, 'accel')
-        recorder('Node', '-file', 
+        model.recorder('Node', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'NodeRelativeAccelHistory.txt')), '-time', 
             '-node', *list(range(self.NStories+1)), '-dof', 1, 'accel')
 
