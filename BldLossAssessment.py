@@ -87,6 +87,7 @@ class BldLossAssessment:
         self.__Read_RepairTime_DS()
         self.__Read_IDR_Accel_thresholds_DS()
 
+
     def LossAssessment(self,MaxDriftRatio,MaxAbsAccel, MaxRIDR = 'none'):
         # Parameters:
         # MaxDriftRatio - max IDR. List[] . It is a vector if there are multiple analyses.

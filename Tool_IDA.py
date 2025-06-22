@@ -25,7 +25,7 @@ def main_IDA(IM_list,NumofStories,FloorArea,StructuralType,
     DesignInfo = {'Code': 'CN', 'SeismicDesignLevel': 'UNKNOWN', 'EQgroup': 'UNKNOWN', 'SiteClass': 'UNKNOWN'}):
 
     EQpath = Path(EQMetaDataFile)
-    T:pd.DataFrame = pd.read_table(EQpath,sep=',')
+    T: pd.DataFrame = pd.read_table(EQpath,sep=',')
     EQRecordFile_list = [(EQpath.parent/str.replace(x,'.txt','')).as_posix()
         for x in T['AccelXfile'].to_list()] 
 

@@ -12,7 +12,7 @@ def ReadRecord(inFilename, outFilename):
     elif os.path.exists(inFilename + '.txt'):
         dt, npts = ReadRecord_TXT (inFilename + '.txt', outFilename)
     else:
-        print('ERROR: Cant find record file!')
+        raise Exception('ERROR: Cant find record file!')
         dt = None
         npts = None
     return dt, npts
