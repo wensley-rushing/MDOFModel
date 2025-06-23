@@ -9,7 +9,7 @@ from ctypes import Union
 import matplotlib.pyplot as plt
 from cmath import pi
 import xara as ops
-from opensees.openseespy import *
+# from opensees.openseespy import *
 import pandas as pd
 import numpy as np
 import ReadRecord
@@ -21,9 +21,21 @@ Test = {1:'NormDispIncr', 2: 'RelativeEnergyIncr', 3:'EnergyIncr',
     4: 'RelativeNormUnbalance',5: 'RelativeNormDispIncr', 6: 'NormUnbalance'}
 
 Algorithm = {1:'KrylovNewton', 2: 'SecantNewton' , 3:'ModifiedNewton' , 
-    4: 'RaphsonNewton',5: 'PeriodicNewton', 6: 'BFGS', 7: 'Broyden', 8: 'NewtonLineSearch'}
+    4: 'Newton',
+    5: 'PeriodicNewton', 
+    6: 'BFGS', 
+    7: 'Broyden', 
+    8: 'NewtonLineSearch'
+}
 
-class MDOFOpenSees():
+
+        # Test = {1:'NormDispIncr', 2: 'RelativeEnergyIncr', 3:'EnergyIncr', 
+        #     4: 'RelativeNormUnbalance',5: 'RelativeNormDispIncr', 6: 'NormUnbalance'}
+        # Algorithm = {8: 'NewtonLineSearch', 1:'KrylovNewton', 2: 'SecantNewton' , 3:'ModifiedNewton' , 
+        #     4: 'RaphsonNewton',5: 'PeriodicNewton', 6: 'BFGS', 7: 'Broyden'} # 9: 'ExpressNewton', 
+
+
+class MDOFOpenSees:
 
     UniqueRecorderPrefix = 'URP0_'
     __g = 9.8
@@ -89,13 +101,13 @@ class MDOFOpenSees():
         # Returns:
         # Iffinish, currentDisp
 
-        model = self.model
         
         if ifprint:
             print('Pushover analysis of a MDOF lumped-mass building model with OpenSees...')
         
         self.__BuildModel(ifprint)
 
+        model = self.model
         tsTag = 301
         model.timeSeries('Linear', tsTag)
         patternTag = 101
@@ -109,11 +121,13 @@ class MDOFOpenSees():
         # recorders
         outputdir = Path(self.outputdir).relative_to(Path.cwd())
         model.recorder('Element', '-file', 
-            str(Path(outputdir,self.UniqueRecorderPrefix+'DriftHistory.txt')), '-time',
+            str(Path(outputdir,self.UniqueRecorderPrefix+'DriftHistory.txt')), 
+            '-time',
             '-ele', *list(range(1,self.NStories+1)), 'deformations')
         model.recorder('Element', '-file', 
-            str(Path(outputdir,self.UniqueRecorderPrefix+'ForceHistory.txt')), '-time',
-            '-ele', *list(range(1,self.NStories+1)), 'axialForce')
+            str(Path(outputdir,self.UniqueRecorderPrefix+'ForceHistory.txt')), 
+            '-time',
+            '-ele', tuple(range(1,self.NStories+1)), 'axialForce')
         model.recorder('Node', '-file', 
             str(Path(outputdir,self.UniqueRecorderPrefix+'NodeDispHistory.txt')),'-time',
             '-node', *list(range(1,self.NStories+1)), '-dof', 1, 'disp')
@@ -142,9 +156,14 @@ class MDOFOpenSees():
                 # if the analysis fails try initial tangent iteration
                 if ok != 0:
                     break
-                currentDisp = nodeDisp(CFloor, 1)
+                currentDisp = model.nodeDisp(CFloor, 1)
 
         Iffinish = not ok
+        import veux
+        artist = veux.create_artist(model, vertical=3)
+        artist.draw_outlines()
+        artist.draw_surfaces()
+        veux.serve(artist)
 
         if ifprint:
             print(f'State (Successful or Fault): {Iffinish:d}')
@@ -177,12 +196,14 @@ class MDOFOpenSees():
         # Uniform EXCITATION: acceleration input
         tsTag = 100
         EQfile = Path(p.parent,self.UniqueRecorderPrefix + p.name +'.dat')
-        timeSeries('Path', tsTag, '-dt', dt, '-filePath', 
+
+        model = self._model
+        model.timeSeries('Path', tsTag, '-dt', dt, '-filePath', 
             os.path.relpath(EQfile,Path.cwd()),
             '-factor', self.__g * GMScaling) # 用相对路径，避免路径中有中文字符
         IDloadTag = 400			# load tag
         GMdirection = 1
-        model.pattern('UniformExcitation', IDloadTag, GMdirection, '-accel', tsTag)
+        model.pattern('UniformExcitation', IDloadTag, GMdirection, accel=tsTag)
 
         # recorders
         outputdir = Path(self.outputdir).relative_to(Path.cwd())
@@ -215,18 +236,13 @@ class MDOFOpenSees():
         Tol = 1e-8
         maxNumIter = 10
         DtAnalysis = dt if DeltaT== 'AsInRecord' else DeltaT # dt
-        wipeAnalysis()
-        constraints('Transformation')
-        numberer('RCM')
+        model.wipeAnalysis()
+        model.constraints('Transformation')
+        model.numberer('RCM')
         # system('UmfPack') # only this works when using ExpressNewton algorithm.
-        system('BandGeneral')
+        model.system('BandGeneral')
 
-        tCurrent = getTime()
-
-        Test = {1:'NormDispIncr', 2: 'RelativeEnergyIncr', 3:'EnergyIncr', 
-            4: 'RelativeNormUnbalance',5: 'RelativeNormDispIncr', 6: 'NormUnbalance'}
-        Algorithm = {8: 'NewtonLineSearch', 1:'KrylovNewton', 2: 'SecantNewton' , 3:'ModifiedNewton' , 
-            4: 'RaphsonNewton',5: 'PeriodicNewton', 6: 'BFGS', 7: 'Broyden'} # 9: 'ExpressNewton', 
+        tCurrent = model.getTime()
 
         # algorithm ExpressNewton 2 1.0 -currentTangent -factorOnce
 
@@ -236,22 +252,22 @@ class MDOFOpenSees():
         ok = 0
         while tCurrent < tFinal:   
             for i in Test:
-                test(Test[i], Tol, maxNumIter)    
+                model.test(Test[i], Tol, maxNumIter)    
                 for j in Algorithm: 
                     if j==9:
-                        algorithm(Algorithm[j], 2, 1.0, '-currentTangent','-factorOnce')
+                        model.algorithm(Algorithm[j], 2, 1.0, '-currentTangent','-factorOnce')
                     elif j < 4:
-                        algorithm(Algorithm[j], '-initial')
+                        model.algorithm(Algorithm[j], '-initial')
                     else:
-                        algorithm(Algorithm[j])
+                        model.algorithm(Algorithm[j])
                     while ok == 0 and tCurrent < tFinal:    
                         NewmarkGamma = 0.5
                         NewmarkBeta = 0.25
-                        integrator('Newmark', NewmarkGamma, NewmarkBeta)
-                        analysis('Transient')
-                        ok = analyze(1, DtAnalysis)
+                        model.integrator('Newmark', NewmarkGamma, NewmarkBeta)
+                        model.analysis('Transient')
+                        ok = model.analyze(1, DtAnalysis)
                         if ok == 0:
-                            tCurrent = getTime()                
+                            tCurrent = model.getTime()                
                             time.append(tCurrent)
             break
 
@@ -262,7 +278,7 @@ class MDOFOpenSees():
             print(f'State (Successful or Fault): {Iffinish:d}')
             print(f'The analysis ends at {tCurrent:.3f} sec out of {TotalTime:.3f} sec.')
         
-        wipe()
+        model.wipe()
         self.__ReadDynamicRecorderFiles()
 
         return Iffinish, tCurrent, TotalTime
@@ -301,8 +317,9 @@ class MDOFOpenSees():
     def __BuildModel(self, ifprint: bool):
         # define building model
 
-        wipe()			
+		
         model = self.model = ops.Model(ndm=2, ndf=3)
+        self._model = model
         
 
         storyLength = 1.0
@@ -323,7 +340,7 @@ class MDOFOpenSees():
             A[i] = self.k[i] * storyLength / E
             # *HystereticParameters = (Vyi, betai, etai, DeltaCi, tao)
             if self.HystereticCurveType == 'Elastic':
-                uniaxialMaterial(self.HystereticCurveType, matTag[i], E)
+                model.uniaxialMaterial(self.HystereticCurveType, matTag[i], E)
             elif self.HystereticCurveType in ['Modified-Clough','Kinematic hardening','Pinching']:
                 Vyi = self.HystereticParameters[0][i]
                 betai = self.HystereticParameters[1][i]
@@ -342,12 +359,12 @@ class MDOFOpenSees():
                     s3p = s2p*1.001
                     e3p = e2p*1.1
                 if self.HystereticCurveType == 'Modified-Clough':
-                    uniaxialMaterial('Hysteretic', matTag[i], 
+                    model.uniaxialMaterial('Hysteretic', matTag[i], 
                         s1p, e1p, s2p, e2p, s3p, e3p, 
                         -s1p, -e1p, -s2p, -e2p, -s3p, -e3p, 0.5, 0.5, 
                         0, 0, 0.0)
                 elif self.HystereticCurveType == 'Kinematic hardening':
-                    uniaxialMaterial('Hysteretic', matTag[i], 
+                    model.uniaxialMaterial('Hysteretic', matTag[i], 
                         s1p, e1p, s2p, e2p, s3p, e3p, 
                         -s1p, -e1p, -s2p, -e2p, -s3p, -e3p, 0.001, 0.999, 
                         0.0, 0.0, 0.0)
@@ -361,18 +378,18 @@ class MDOFOpenSees():
                         pass
                     py = tao
                     px = 1.0 - py
-                    uniaxialMaterial('Hysteretic', matTag[i], 
+                    model.uniaxialMaterial('Hysteretic', matTag[i], 
                         s1p, e1p, s2p, e2p, s3p, e3p, 
                         -s1p, -e1p, -s2p, -e2p, -s3p, -e3p, px, py, 
                         0, 0, 0.0)
                 
                 if (self.SelfCenteringEnhancingFactor > 0) & (self.SelfCenteringEnhancingFactor <= 1):
                     matTag_MultiLinear = 1000+matTag[i]
-                    uniaxialMaterial('ElasticMultiLinear', matTag_MultiLinear, 
+                    model.uniaxialMaterial('ElasticMultiLinear', matTag_MultiLinear, 
                         0.0, '-strain', -e3p,-e2p,-e1p,e1p,e2p,e3p, 
                         '-stress', -s3p,-s2p,-s1p,s1p,s2p,s3p)
                     matTag_Parallel = 2000+matTag[i]
-                    uniaxialMaterial('Parallel', matTag_Parallel, matTag[i], matTag_MultiLinear, 
+                    model.uniaxialMaterial('Parallel', matTag_Parallel, matTag[i], matTag_MultiLinear, 
                         '-factors', 1.0-self.SelfCenteringEnhancingFactor,self.SelfCenteringEnhancingFactor)
             else:
                 print('Error: incorrect Hysteretic Curve Type')
@@ -381,13 +398,13 @@ class MDOFOpenSees():
         # element
         for i in range(self.NStories):
             if (self.SelfCenteringEnhancingFactor > 0) & (self.SelfCenteringEnhancingFactor <= 1):
-                element('Truss', i+1, i,i+1, A[i], 2000+matTag[i])
+                model.element('Truss', i+1, i,i+1, A[i], 2000+matTag[i])
             else:
-                element('Truss', i+1, i,i+1, A[i], matTag[i])
+                model.element('Truss', i+1, i,i+1, A[i], matTag[i])
 
         # Eigenvalue Analysis   
         if self.NStories>1:  
-            lambdaN = eigen('-fullGenLapack', 2)
+            lambdaN = model.eigen('-fullGenLapack', 2)
             w1 = lambdaN[0]**0.5
             w2 = lambdaN[1]**0.5
             T1 =  2.0*pi/w1
@@ -395,7 +412,7 @@ class MDOFOpenSees():
             if ifprint:
                 print(f'Eigen Analysis: T1 = {T1:.2f} s; T2 = {T2:.2f} s')
         else:
-            lambdaN = eigen('-fullGenLapack', 1)
+            lambdaN = model.eigen('-fullGenLapack', 1)
             w1 = lambdaN[0]**0.5
             T1 =  2.0*pi/w1
             if ifprint:
@@ -421,7 +438,7 @@ class MDOFOpenSees():
             betaKcurr = KcurrSwitch*2.*xDamp/(omegaI+omegaJ)      # current-K;      +beatKcurr*KCurrent
             betaKcomm = KcommSwitch*2.*xDamp/(omegaI+omegaJ)      # last-committed K;   +betaKcomm*KlastCommitt
             betaKinit = KinitSwitch*2.*xDamp/(omegaI+omegaJ)      # initial-K;     +beatKinit*Kini
-            rayleigh(alphaM,betaKcurr, betaKinit, betaKcomm)       
+            model.rayleigh(alphaM,betaKcurr, betaKinit, betaKcomm)       
         else:
             xDamp = self.DampingRatio;  
             MpropSwitch = 1.0
@@ -429,7 +446,7 @@ class MDOFOpenSees():
             lambdaI = lambdaN[nEigenI-1] 
             omegaI = lambdaI**0.5
             alphaM = MpropSwitch*xDamp*2.0*omegaI
-            rayleigh(alphaM, 0, 0, 0)  
+            model.rayleigh(alphaM, 0, 0, 0)  
 
     def __ReadDynamicRecorderFiles(self):
 
@@ -440,17 +457,17 @@ class MDOFOpenSees():
 
         self.MaxDrift = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'MaxDrift.txt')), 
-            sep='\s+', header=None).loc[2,:].values
+            sep=r'\s+', header=None).loc[2,:].values
         self.MaxAbsAccel = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'MaxAbsAccel.txt')), 
-            sep='\s+', header=None).loc[2,:].values
+            sep=r'\s+', header=None).loc[2,:].values
         self.MaxRelativeAccel = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'MaxRelativeAccel.txt')), 
-            sep='\s+', header=None).loc[2,:].values
+            sep=r'\s+', header=None).loc[2,:].values
         
         df = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'DriftHistory.txt')), 
-            sep='\s+', header=None)
+            sep=r'\s+', header=None)
         self.DriftHistory = {}
         self.DriftHistory['time'] = df.loc[:,0]
         ind_last5sec = ((self.DriftHistory['time'][-1:]-self.DriftHistory['time'])<5.0)
@@ -463,7 +480,7 @@ class MDOFOpenSees():
 
         df = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'ForceHistory.txt')), 
-            sep='\s+', header=None)
+            sep=r'\s+', header=None)
         self.ForceHistory = {}
         self.ForceHistory['time'] = df.loc[:,0]
         for i in range(self.NStories):
@@ -471,7 +488,7 @@ class MDOFOpenSees():
         
         df = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'NodeAbsAccelHistory.txt')), 
-            sep='\s+', header=None)
+            sep=r'\s+', header=None)
         self.NodeAbsAccelHistory = {}
         self.NodeAbsAccelHistory['time'] = df.loc[:,0]
         for i in range(self.NStories):
@@ -479,7 +496,7 @@ class MDOFOpenSees():
 
         df = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'NodeRelativeAccelHistory.txt')), 
-            sep='\s+', header=None)
+            sep=r'\s+', header=None)
         self.NodeRelativeAccelHistory = {}
         self.NodeRelativeAccelHistory['time'] = df.loc[:,0]
         for i in range(self.NStories):
@@ -489,7 +506,7 @@ class MDOFOpenSees():
 
         df = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'DriftHistory.txt')), 
-            sep='\s+', header=None)
+            sep=r'\s+', header=None)
         self.DriftHistory = {}
         self.DriftHistory['time'] = df.loc[:,0]
         for i in range(self.NStories):
@@ -497,7 +514,7 @@ class MDOFOpenSees():
 
         df = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'ForceHistory.txt')), 
-            sep='\s+', header=None)
+            sep=r'\s+', header=None)
         self.ForceHistory = {}
         self.ForceHistory['time'] = df.loc[:,0]
         for i in range(self.NStories):
@@ -505,7 +522,7 @@ class MDOFOpenSees():
 
         df = pd.read_table(
             str(Path(self.outputdir,self.UniqueRecorderPrefix+'NodeDispHistory.txt')), 
-            sep='\s+', header=None)
+            sep=r'\s+', header=None)
         self.NodeDispHistory = {}
         self.NodeDispHistory['time'] = df.loc[:,0]
         for i in range(self.NStories):

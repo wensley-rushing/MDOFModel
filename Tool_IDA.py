@@ -65,9 +65,16 @@ def main(args):
         print("ERROR: wrong arguments!")
         return
 
-    main_IDA(args.IM_list,args.NumofStories,args.FloorArea,args.StructuralType,
-        args.EQMetaDataFile,args.OutputCSVFile,args.SelfCenteringEnhancingFactor,
-        args.DesignInfo)
+    main_IDA(args.IM_list,
+             args.NumofStories,
+             args.FloorArea,
+             args.StructuralType,
+
+             args.EQMetaDataFile,
+             args.OutputCSVFile,
+             args.SelfCenteringEnhancingFactor,
+
+             args.DesignInfo)
 
 
 # test function
